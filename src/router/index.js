@@ -36,6 +36,13 @@ const router = createRouter({
       component: () => import('@/views/account/login.vue'),
     },
     {
+      path: '/login-callback',
+      name: 'LoginCallback',
+      component: () => import('@/views/account/LoginCallback.vue'),
+      hidden: true,
+      meta: { requiresAuth: false }
+    },
+    {
       path: '/',
       name: 'Home',
       component: PublicHome,

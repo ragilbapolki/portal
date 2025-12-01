@@ -1,8 +1,7 @@
-<!-- PublicHeader.vue -->
-<!-- Lokasi: src/components/PublicHeader.vue -->
 <template>
   <header class="page-header">
     <div class="header-container">
+      <!-- LOGO -->
       <div class="header-logo">
         <router-link to="/" class="logo-link">
           <img
@@ -17,12 +16,15 @@
         </router-link>
       </div>
 
+      <!-- ACTIONS: LOGIN / USER MENU -->
       <div class="header-actions">
+
+        <!-- SUDAH LOGIN → TAMPILKAN USER DROPDOWN -->
         <div v-if="isAuthenticated" class="user-menu">
           <el-dropdown trigger="click" @command="handleCommand">
             <div class="el-dropdown-link user-info">
               <img
-                :src="user.avatar_url || '/default-avatar.png'"
+                :src="user.avatar_url"
                 :alt="user.name"
                 class="user-avatar"
               />
@@ -31,15 +33,13 @@
                 <arrow-down />
               </el-icon>
             </div>
+
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="profile">
-                  👤 Profil
-                </el-dropdown-item>
-                <el-dropdown-item command="dashboard">
-                  🏛️ Admin Dashboard
-                </el-dropdown-item>
-                <el-dropdown-item command="logout" divided>
+                <el-dropdown-item command="profile">👤 Profil</el-dropdown-item>
+                <el-dropdown-item command="dashboard">🏛️ Admin Dashboard</el-dropdown-item>
+
+                <el-dropdown-item divided command="logout">
                   🚪 Logout
                 </el-dropdown-item>
               </el-dropdown-menu>
@@ -47,112 +47,74 @@
           </el-dropdown>
         </div>
 
-        <button v-else @click="openLoginModal" class="login-button">
+        <!-- BELUM LOGIN → TAMPILKAN TOMBOL LOGIN -->
+        <button v-else @click="login" class="login-button">
           Login
         </button>
+
       </div>
     </div>
-
-    <!-- Login Modal -->
-    <Login v-model="showLoginModal" />
   </header>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { dispatch, ctx } from '@/store'
-import { logout } from '@/api/user'
-import { ElMessage } from 'element-plus'
-import { ArrowDown } from '@element-plus/icons-vue'
-import Login from '@/views/public/components/Login.vue'
+import { computed } from "vue";
+import { useRouter } from "vue-router";
+import keycloak from "@/keycloak";
+import { ArrowDown } from "@element-plus/icons-vue";
 
-const router = useRouter()
+const router = useRouter();
 
-// State
-const showLoginModal = ref(false)
+/* ===============================
+   🔐 CEK STATUS LOGIN GLOBAL
+   =============================== */
+const isAuthenticated = computed(() => keycloak.authenticated);
 
-// Auth State - Menggunakan computed untuk reactive
-const isAuthenticated = computed(() => {
-  const token = dispatch.user.getToken()
-  const userInfo = ctx.userInfo
-  console.log('🔍 Auth Check - Token:', token ? 'exists' : 'not found')
-  console.log('🔍 Auth Check - User:', userInfo)
-  return !!token && !!userInfo
-})
+/* ===============================
+   👤 DATA USER DARI KEYCLOAK
+   =============================== */
+const user = computed(() => {
+  if (!keycloak.authenticated) return {};
 
-const user = computed(() => ctx.userInfo || {})
+  return {
+    name:
+      keycloak.tokenParsed?.name ||
+      keycloak.tokenParsed?.preferred_username,
+    email: keycloak.tokenParsed?.email,
+    avatar_url: "/default-avatar.png"
+  };
+});
 
-// Methods
-const openLoginModal = () => {
-  showLoginModal.value = true
-}
+/* ===============================
+   🔑 LOGIN → langsung ke Keycloak
+   =============================== */
+const login = () => keycloak.login();
 
-// Handle dropdown commands
-const handleCommand = (command) => {
-  switch (command) {
-    case 'profile':
-      router.push('/profile/me')
-      break
-    case 'dashboard':
-      router.push('/admin/dashboard')
-      break
-    case 'logout':
-      handleLogout()
-      break
+/* ===============================
+   🚪 LOGOUT → bersihkan session Keycloak
+   =============================== */
+const handleLogout = () => {
+  keycloak.logout({
+    redirectUri: window.location.origin
+  });
+};
+
+/* ===============================
+   📌 DROPDOWN MENU HANDLER
+   =============================== */
+const handleCommand = (cmd) => {
+  switch (cmd) {
+    case "profile":
+      router.push("/profile/me");
+      break;
+    case "dashboard":
+      router.push("/admin/dashboard");
+      break;
+    case "logout":
+      handleLogout();
+      break;
   }
-}
-
-// Logout handler - FIXED
-const handleLogout = async () => {
-  try {
-    console.log('🔄 Starting logout process...')
-
-    // 1. Call logout API
-    await logout()
-
-    // 2. Clear localStorage - CRITICAL
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
-    localStorage.clear() // Clear everything to be safe
-
-    // 3. Clear store
-    dispatch.user.removeToken()
-    dispatch.user.removeInfo()
-
-    // 4. Clear session storage (if any)
-    sessionStorage.clear()
-
-    console.log('✅ Logout successful')
-    console.log('Token after logout:', localStorage.getItem('token'))
-    console.log('User after logout:', localStorage.getItem('user'))
-
-    ElMessage.success('Berhasil logout')
-
-    // 5. Redirect to home with full reload
-    setTimeout(() => {
-      // Force full page reload to clear all state
-      window.location.href = '/'
-    }, 300)
-  } catch (error) {
-    console.error('❌ Logout error:', error)
-
-    // Even if API fails, clear ALL local data
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
-    localStorage.clear()
-    sessionStorage.clear()
-    dispatch.user.removeToken()
-    dispatch.user.removeInfo()
-
-    ElMessage.warning('Logout berhasil (data lokal telah dihapus)')
-
-    // Force full page reload
-    setTimeout(() => {
-      window.location.href = '/'
-    }, 300)
-  }
-}
+};
 </script>
 
 <style scoped>
@@ -191,7 +153,6 @@ const handleLogout = async () => {
 .company-text {
   display: flex;
   flex-direction: column;
-  justify-content: center;
   line-height: 1.1;
 }
 
@@ -263,38 +224,10 @@ const handleLogout = async () => {
   box-shadow: 0 4px 8px rgba(22, 163, 74, 0.3);
 }
 
-/* Responsive Design */
+/* Responsive */
 @media (max-width: 768px) {
-  .header-container {
-    flex-wrap: wrap;
-    gap: 1rem;
-  }
-
-  .company-name-header {
-    font-size: 1.1rem;
-  }
-
-  .company-logo {
-    width: 35px;
-    height: 35px;
-  }
-
   .user-name {
     display: none;
-  }
-}
-
-@media (max-width: 480px) {
-  .header-container {
-    padding: 0.75rem;
-  }
-
-  .company-name-header {
-    font-size: 1rem;
-  }
-
-  .company-subtitle {
-    font-size: 0.7rem;
   }
 }
 </style>

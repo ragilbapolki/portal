@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { dispatch } from '@/store'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import keycloak from '@/keycloak'   // ⬅ tambahkan ini
 
 const service = axios.create({
   baseURL: import.meta.env.VITE_BASE_API || 'http://127.0.0.1:8000/api/v1',
@@ -9,12 +10,22 @@ const service = axios.create({
 
 // request interceptor
 service.interceptors.request.use(
-  config => {
-    const token = dispatch.user.getToken()
+  async config => {
+    let token = null
+
+    // 1️⃣ utamakan token KEYCLOAK
+    if (keycloak && keycloak.authenticated) {
+      token = keycloak.token
+    }
+    // 2️⃣ fallback ke token lama
+    else {
+      token = dispatch.user.getToken()
+    }
+
     if (token) {
-      // jika backend pakai Bearer token
       config.headers['Authorization'] = `Bearer ${token}`
     }
+
     return config
   },
   error => Promise.reject(error)
@@ -31,16 +42,19 @@ service.interceptors.response.use(
         duration: 5000
       })
 
-      // jika token invalid / expired
       if ([50008, 50012, 50014].includes(res.code)) {
         ElMessageBox.confirm(
-          'You have been logged out, you can cancel to stay on this page, or log in again',
-          'Confirm logout', {
+          'You have been logged out, login again?',
+          'Confirm logout',
+          {
             confirmButtonText: 'Re-Login',
             cancelButtonText: 'Cancel',
             type: 'warning'
           }
         ).then(() => {
+          // LOGOUT KEYCLOAK
+          if (keycloak) keycloak.logout()
+
           dispatch.user.removeToken()
           location.reload()
         })

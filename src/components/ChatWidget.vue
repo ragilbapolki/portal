@@ -172,16 +172,33 @@ const sendMessage = async () => {
   await scrollToBottom();
 
   try {
-    const { data } = await axios.post("/api/v1/chat", { question: userMessage });
+    // Full URL
+    const { data } = await axios.post(
+      "http://127.0.0.1:8002/chat/ask",
+      { question: userMessage },
+      { timeout: 30000 } // 30 detik
+    );
+
     messages.value.push({
       sender: "ai",
       text: data.answer || "Maaf, saya tidak menemukan jawaban.",
       timestamp: new Date()
     });
+
   } catch (error) {
+    let message = "Terjadi kesalahan pada server. Silakan coba lagi.";
+
+    if (error.response) {
+      message = error.response.data?.error || message;
+    } else if (error.request) {
+      message = "Server tidak merespons. Periksa koneksi atau coba lagi nanti.";
+    } else {
+      message = error.message;
+    }
+
     messages.value.push({
       sender: "ai",
-      text: "Terjadi kesalahan pada server. Silakan coba lagi.",
+      text: message,
       timestamp: new Date()
     });
   } finally {

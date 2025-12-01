@@ -1,58 +1,83 @@
-import 'normalize.css/normalize.css' // CSS resets
-import '@/styles/main.scss' // global css
-// import 'element-plus/theme-chalk/dark/css-vars.css'
+import 'normalize.css/normalize.css'
+import '@/styles/main.scss'
 import ElementPlus from 'element-plus'
-
 import 'element-plus/dist/index.css'
 
-import {
-  createApp
-} from 'vue'
+import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'
 import SvgIcon from './components/SvgIcon.vue'
-import {
-  ctx
-} from './store'
+import { ctx } from './store'
 import './permission'
 
-async function enableMocking() {
-  if (import.meta.env.MODE !== 'development') {
-    return
-  }
+import keycloak from './keycloak'
 
-  const {
-    worker
-  } = await import('../mocks/browser')
+async function enableMock() {
+  if (import.meta.env.MODE !== 'development') return
 
-  // `worker.start()` returns a Promise that resolves
-  // once the Service Worker is up and ready to intercept requests.
+  const { worker } = await import('../mocks/browser')
   return worker.start({
-    // quiet: true, // Disables all the logging from the library (e.g. the activation message, the intercepted requests’ messages).
-    serviceWorker: {
-      url: '/mockServiceWorker.js',
-    },
-    // Decide how to react to unhandled requests (i.e. those that do not have a matching request handler).
-    // filter warnings
-    onUnhandledRequest(request, print) {
-      const url = new URL(request.url)
-      if (url.pathname.includes('/dev-api')) {
-        print.warning()
-      }
-      return
-    },
+    serviceWorker: { url: '/mockServiceWorker.js' }
   })
 }
 
-enableMocking().then(async () => {
-  // await import('@/permission')
+// ---------------------------------------
+// BOOTSTRAP APP
+// ---------------------------------------
+async function bootstrap() {
+  // Jalankan Mock jika dev
+  await enableMock()
 
+  // ---------------------------------------
+  // 🔑 INITIALIZE KEYCLOAK
+  // ---------------------------------------
+  const authenticated = await keycloak.init({
+    onLoad: "login-required",
+    checkLoginIframe: false,
+  });
+
+  if (authenticated) {
+    console.log("🔓 Keycloak Authenticated");
+    localStorage.setItem("kc_token", keycloak.token);
+    localStorage.setItem("kc_refresh", keycloak.refreshToken);
+  } else {
+    console.log("❌ Not authenticated");
+  }
+
+  // Pastikan token tidak null sebelum disimpan
+  localStorage.setItem("kc_token", keycloak.token ?? "")
+  localStorage.setItem("kc_refresh", keycloak.refreshToken ?? "")
+
+  // ---------------------------------------
+  // 🚀 MOUNT VUE APP SETELAH KEYCLOAK SIAP
+  // ---------------------------------------
   const app = createApp(App)
-  app.use(router) // It must be after the enablemock function
-  app.use(ElementPlus)
 
-  app.provide('context', ctx)
+  app.use(router)
+  app.use(ElementPlus)
   app.component('svg-icon', SvgIcon)
+  app.provide('context', ctx)
+
+  // simpan ke global properties
+  app.config.globalProperties.$keycloak = keycloak
 
   app.mount('#app')
-})
+
+  setInterval(async () => {
+    try {
+      const refreshed = await keycloak.updateToken(30)
+      if (refreshed) {
+        console.log("🔁 Token diperbarui")
+
+        localStorage.setItem("kc_token", keycloak.token ?? "")
+        localStorage.setItem("kc_refresh", keycloak.refreshToken ?? "")
+      }
+    } catch (e) {
+      console.error("Gagal refresh token, redirect login...", e)
+      keycloak.login() // fallback
+    }
+  }, 10000)
+}
+
+// MULAI
+bootstrap()
